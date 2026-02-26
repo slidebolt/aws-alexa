@@ -1,0 +1,16 @@
+{
+  "name": "slidebolt-clean-infra",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "synth": "cdk synth"
+  },
+  "devDependencies": {
+    "aws-cdk": "^2.1019.2"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.188.0",
+    "constructs": "^10.4.2"
+  }
+}

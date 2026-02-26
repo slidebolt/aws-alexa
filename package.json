@@ -1,0 +1,27 @@
+{
+  "name": "slidebolt-clean",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "dependencies": {
+    "@aws-sdk/client-apigatewaymanagementapi": "^3.883.0",
+    "@aws-sdk/client-dynamodb": "^3.883.0",
+    "@aws-sdk/lib-dynamodb": "^3.883.0"
+  },
+  "scripts": {
+    "step0": "node scripts/step0-check.mjs",
+    "infra:install": "npm install --prefix infra",
+    "diff": "node scripts/diff.mjs",
+    "lint:repo": "node scripts/repo-guard.mjs",
+    "build": "node scripts/build.mjs",
+    "test": "node scripts/test.mjs unit",
+    "test:integration": "node scripts/test.mjs integration",
+    "test:e2e": "node scripts/test.mjs e2e",
+    "synth": "node scripts/synth.mjs",
+    "synth:real": "node scripts/synth.mjs --real",
+    "deploy": "node scripts/deploy.mjs",
+    "deploy:check": "node scripts/postdeploy-check.mjs",
+    "verify": "node scripts/repo-guard.mjs && node scripts/build.mjs && node scripts/test.mjs unit && node scripts/synth.mjs",
+    "verify:full": "node scripts/repo-guard.mjs && node scripts/build.mjs && node scripts/test.mjs unit && node scripts/test.mjs integration && node scripts/synth.mjs"
+  }
+}
