@@ -59,7 +59,7 @@ npm run verify:full
 
 Required env vars:
 
-- `WS_SHARED_SECRET`
+- `ADMIN_SECRET`
 - `ALEXA_SKILL_ID`
 
 Optional:

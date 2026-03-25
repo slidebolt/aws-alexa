@@ -44,7 +44,7 @@ export class SldBltStack extends cdk.Stack {
       resourceType: "CFN_STACK"
     });
 
-    const wsSharedSecret = new cdk.CfnParameter(this, "AdminSecret", {
+    const adminSecret = new cdk.CfnParameter(this, "AdminSecret", {
       type: "String",
       noEcho: true,
       description: "Shared secret for SlideBolt Admin WebSocket actions."
@@ -157,7 +157,7 @@ export class SldBltStack extends cdk.Stack {
       timeout: cdk.Duration.seconds(10),
       environment: {
         DATA_TABLE: dataTable.tableName,
-        ADMIN_SECRET: wsSharedSecret.valueAsString
+        ADMIN_SECRET: adminSecret.valueAsString
       }
     });
 

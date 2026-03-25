@@ -30,13 +30,21 @@ export async function handleReporterEvent({
       continue;
     }
 
-    const payload = normalized.kind === "delete"
-      ? buildDeleteReport({ endpointId: normalized.deviceId, accessToken })
-      : buildChangeReport({
-          endpointId: normalized.deviceId,
-          accessToken,
-          properties: propsFromRecord(normalized.newImage)
-        });
+    let payload;
+    if (normalized.kind === "delete") {
+      payload = buildDeleteReport({ endpointId: normalized.deviceId, accessToken });
+    } else if (normalized.kind === "discovery") {
+      payload = buildAddOrUpdateReport({
+        endpoint: normalized.newImage?.endpoint,
+        accessToken
+      });
+    } else {
+      payload = buildChangeReport({
+        endpointId: normalized.deviceId,
+        accessToken,
+        properties: propsFromRecord(normalized.newImage)
+      });
+    }
 
     console.info("REPORTER_SEND:", { kind: normalized.kind, deviceId: normalized.deviceId });
     await reportSender(payload, normalized);
@@ -76,6 +84,12 @@ function normalizeRecord(record) {
     return { kind: "delete", clientId, deviceId, oldImage, newImage };
   }
 
+  const oldEndpoint = JSON.stringify(oldImage?.endpoint || {});
+  const newEndpoint = JSON.stringify(newImage?.endpoint || {});
+  if (oldEndpoint !== newEndpoint) {
+    return { kind: "discovery", clientId, deviceId, oldImage, newImage };
+  }
+
   const oldState = JSON.stringify(oldImage?.state || {});
   const newState = JSON.stringify(newImage?.state || {});
   if (oldState === newState) return null;
@@ -111,6 +125,24 @@ function buildDeleteReport({ endpointId, accessToken }) {
       },
       payload: {
         endpoints: [{ endpointId }],
+        scope: { type: "BearerToken", token: accessToken }
+      }
+    }
+  };
+}
+
+function buildAddOrUpdateReport({ endpoint, accessToken }) {
+  const endpointId = endpoint?.endpointId || "unknown";
+  return {
+    event: {
+      header: {
+        namespace: "Alexa.Discovery",
+        name: "AddOrUpdateReport",
+        payloadVersion: "3",
+        messageId: `discovery-${Date.now()}-${endpointId}`
+      },
+      payload: {
+        endpoints: [{ ...endpoint }],
         scope: { type: "BearerToken", token: accessToken }
       }
     }

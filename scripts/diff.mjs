@@ -7,8 +7,8 @@ loadLocalEnvFiles();
 const stackName = process.env.CDK_STACK_NAME || "SldBltProdStack";
 const region = process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "us-east-1";
 
-if (!process.env.WS_SHARED_SECRET) {
-  console.error("Missing required env var: WS_SHARED_SECRET");
+if (!process.env.ADMIN_SECRET) {
+  console.error("Missing required env var: ADMIN_SECRET");
   process.exit(1);
 }
 if (!process.env.ALEXA_SKILL_ID) {
@@ -21,7 +21,7 @@ execFileSync("npx", [
   "diff",
   stackName,
   "--parameters",
-  `WsSharedSecret=${process.env.WS_SHARED_SECRET}`,
+  `AdminSecret=${process.env.ADMIN_SECRET}`,
   "--parameters",
   `AlexaSkillId=${process.env.ALEXA_SKILL_ID}`
 ], {

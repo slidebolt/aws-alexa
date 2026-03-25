@@ -23,8 +23,8 @@ function run(cmd, cmdArgs, opts = {}) {
   execFileSync(cmd, cmdArgs, { stdio: "inherit", ...opts });
 }
 
-if (!process.env.WS_SHARED_SECRET) {
-  console.error("Missing required env var: WS_SHARED_SECRET");
+if (!process.env.ADMIN_SECRET) {
+  console.error("Missing required env var: ADMIN_SECRET");
   process.exit(1);
 }
 if (!process.env.ALEXA_SKILL_ID) {
@@ -50,7 +50,7 @@ run("npx", [
   "--require-approval",
   "never",
   "--parameters",
-  `WsSharedSecret=${process.env.WS_SHARED_SECRET}`,
+  `AdminSecret=${process.env.ADMIN_SECRET}`,
   "--parameters",
   `AlexaSkillId=${process.env.ALEXA_SKILL_ID}`,
   "--outputs-file",
