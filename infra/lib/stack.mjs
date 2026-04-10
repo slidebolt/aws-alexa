@@ -26,12 +26,23 @@ const lambdaAssetCode = lambda.Code.fromAsset(ROOT, {
   ]
 });
 
+function requireProcessEnv(name) {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`Missing required env var for CDK synth/deploy: ${name}`);
+  }
+  return value;
+}
+
 export class SldBltStack extends cdk.Stack {
   constructor(scope, id, props = {}) {
     super(scope, id, props);
 
     const stage = "prod";
     const prefix = "SldBlt";
+    const alexaClientId = requireProcessEnv("ALEXA_CLIENT_ID");
+    const alexaClientSecret = requireProcessEnv("ALEXA_CLIENT_SECRET");
+    const alexaRedirectUri = requireProcessEnv("ALEXA_REDIRECT_URI");
 
     const application = new appregistry.CfnApplication(this, "AppRegistryApplication", {
       name: `${prefix}-${stage}`,
@@ -119,8 +130,9 @@ export class SldBltStack extends cdk.Stack {
       timeout: cdk.Duration.seconds(15),
       environment: {
         DATA_TABLE: dataTable.tableName,
-        ALEXA_CLIENT_ID: process.env.ALEXA_CLIENT_ID || "",
-        ALEXA_CLIENT_SECRET: process.env.ALEXA_CLIENT_SECRET || ""
+        ALEXA_CLIENT_ID: alexaClientId,
+        ALEXA_CLIENT_SECRET: alexaClientSecret,
+        ALEXA_REDIRECT_URI: alexaRedirectUri
       }
     });
 
@@ -143,9 +155,10 @@ export class SldBltStack extends cdk.Stack {
       timeout: cdk.Duration.seconds(10),
       environment: {
         DATA_TABLE: dataTable.tableName,
-        TEST_ALEXA_TOKEN: process.env.TEST_ALEXA_TOKEN || "",
-        ALEXA_CLIENT_ID: process.env.ALEXA_CLIENT_ID || "",
-        ALEXA_CLIENT_SECRET: process.env.ALEXA_CLIENT_SECRET || ""
+        ALEXA_CLIENT_ID: alexaClientId,
+        ALEXA_CLIENT_SECRET: alexaClientSecret,
+        ALEXA_REDIRECT_URI: alexaRedirectUri,
+        ...(process.env.TEST_ALEXA_TOKEN ? { TEST_ALEXA_TOKEN: process.env.TEST_ALEXA_TOKEN } : {})
       }
     });
 

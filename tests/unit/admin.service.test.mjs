@@ -150,6 +150,107 @@ test("admin revoke client sets active=false", async () => {
   assert.equal(calls[0][3][":a"], false);
 });
 
+test("admin add user to client writes user mapping", async () => {
+  const calls = [];
+  const repo = {
+    put: async (item) => {
+      calls.push(item);
+      return {};
+    }
+  };
+  const out = parse(
+    await handleAdminAction({
+      action: "admin_add_user_to_client",
+      config: { adminSecret: "good" },
+      authToken: "good",
+      body: { clientId: "c1", userId: "amzn1.account.ABC123", email: "test@example.com" },
+      repo
+    })
+  );
+  assert.equal(out.statusCode, 200);
+  assert.equal(out.body.action, "admin_add_user_to_client");
+  assert.equal(out.body.accepted, true);
+  assert.equal(out.body.userId, "amzn1.account.ABC123");
+  assert.equal(out.body.clientId, "c1");
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].pk, "USER#amzn1.account.ABC123");
+  assert.equal(calls[0].sk, "METADATA");
+  assert.equal(calls[0].email, "test@example.com");
+  assert.equal(calls[0].clientId, "c1");
+  assert.ok(calls[0].mappedAt);
+});
+
+test("admin add user to client validates required fields", async () => {
+  const noClient = parse(
+    await handleAdminAction({
+      action: "admin_add_user_to_client",
+      config: { adminSecret: "good" },
+      authToken: "good",
+      body: { userId: "u1" }
+    })
+  );
+  assert.equal(noClient.statusCode, 400);
+
+  const noUser = parse(
+    await handleAdminAction({
+      action: "admin_add_user_to_client",
+      config: { adminSecret: "good" },
+      authToken: "good",
+      body: { clientId: "c1" }
+    })
+  );
+  assert.equal(noUser.statusCode, 400);
+});
+
+test("admin remove user from client deletes user record", async () => {
+  const calls = [];
+  const repo = {
+    delete: async (key) => {
+      calls.push(key);
+      return {};
+    }
+  };
+  const out = parse(
+    await handleAdminAction({
+      action: "admin_remove_user_from_client",
+      config: { adminSecret: "good" },
+      authToken: "good",
+      body: { userId: "amzn1.account.ABC123" },
+      repo
+    })
+  );
+  assert.equal(out.statusCode, 200);
+  assert.equal(out.body.action, "admin_remove_user_from_client");
+  assert.equal(out.body.accepted, true);
+  assert.deepEqual(calls[0], { pk: "USER#amzn1.account.ABC123", sk: "METADATA" });
+});
+
+test("admin list client users returns mapped users", async () => {
+  const repo = {
+    scan: async () => ({
+      Items: [
+        { pk: "USER#u1", sk: "METADATA", email: "a@test.com", clientId: "c1", mappedAt: "2026-01-01T00:00:00.000Z" },
+        { pk: "USER#u2", sk: "METADATA", email: "b@test.com", clientId: "c2", mappedAt: "2026-01-02T00:00:00.000Z" },
+        { pk: "USER#u3", sk: "METADATA", email: "c@test.com", clientId: "c1", mappedAt: "2026-01-03T00:00:00.000Z" },
+        { pk: "CLIENT#c1", sk: "METADATA", label: "Home" }
+      ]
+    })
+  };
+  const out = parse(
+    await handleAdminAction({
+      action: "admin_list_client_users",
+      config: { adminSecret: "good" },
+      authToken: "good",
+      body: { clientId: "c1" },
+      repo
+    })
+  );
+  assert.equal(out.statusCode, 200);
+  assert.equal(out.body.items.length, 2);
+  assert.equal(out.body.items[0].email, "a@test.com");
+  assert.equal(out.body.items[1].email, "c@test.com");
+});
+
 test("admin delete client issues repository delete", async () => {
   const calls = [];
   const repo = {

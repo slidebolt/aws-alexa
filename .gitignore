@@ -8,3 +8,4 @@ cdk.out/
 cdk-outputs.json
 skill/.ask/
 .DS_Store
+!.env.example

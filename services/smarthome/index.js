@@ -29,44 +29,82 @@ async function getUserProfile(token) {
   }
 }
 
+function acceptGrantError(messageId, message) {
+  return {
+    event: {
+      header: {
+        namespace: "Alexa.Authorization",
+        name: "ErrorResponse",
+        payloadVersion: "3",
+        messageId: messageId + "-rsp"
+      },
+      payload: {
+        type: "ACCEPT_GRANT_FAILED",
+        message
+      }
+    }
+  };
+}
+
 async function handleAcceptGrant(userId, directive, repo) {
   const code = directive?.payload?.grant?.code;
   const alexaClientId = process.env.ALEXA_CLIENT_ID;
   const alexaClientSecret = process.env.ALEXA_CLIENT_SECRET;
-  const success = {
-    event: {
-      header: {
-        namespace: "Alexa.Authorization",
-        name: "AcceptGrant.Response",
-        payloadVersion: "3",
-        messageId: (directive?.header?.messageId || "grant") + "-rsp"
-      },
-      payload: {}
-    }
-  };
+  const alexaRedirectUri = process.env.ALEXA_REDIRECT_URI;
+  const messageId = directive?.header?.messageId || "grant";
 
-  if (!code || !alexaClientId || !alexaClientSecret) {
-    console.error("ACCEPT_GRANT_FAIL: Missing code or credentials");
-    return success;
+  console.info("ACCEPT_GRANT_IN:", {
+    userId,
+    hasCode: !!code,
+    hasClientId: !!alexaClientId,
+    hasClientSecret: !!alexaClientSecret,
+    hasRedirectUri: !!alexaRedirectUri
+  });
+
+  if (!code || !alexaClientId || !alexaClientSecret || !alexaRedirectUri) {
+    const missing = [
+      !code && "code",
+      !alexaClientId && "ALEXA_CLIENT_ID",
+      !alexaClientSecret && "ALEXA_CLIENT_SECRET",
+      !alexaRedirectUri && "ALEXA_REDIRECT_URI"
+    ].filter(Boolean);
+    console.error("ACCEPT_GRANT_FAIL:", { reason: "missing_params", missing });
+    return acceptGrantError(messageId, `Missing: ${missing.join(", ")}`);
   }
 
   try {
     const params = new URLSearchParams({
       grant_type: "authorization_code",
       code,
-      client_id: alexaClientId,
-      client_secret: alexaClientSecret
+      redirect_uri: alexaRedirectUri
+    });
+    const basicAuth = Buffer.from(`${alexaClientId}:${alexaClientSecret}`, "utf8").toString("base64");
+    console.info("ACCEPT_GRANT_EXCHANGE:", {
+      tokenUrl: "https://api.amazon.com/auth/o2/token",
+      authScheme: "HTTP_BASIC",
+      clientIdPrefix: alexaClientId.slice(0, 30) + "...",
+      codePrefix: code.slice(0, 10) + "...",
+      redirectUri: alexaRedirectUri
     });
     const res = await fetch("https://api.amazon.com/auth/o2/token", {
       method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+        Authorization: `Basic ${basicAuth}`
+      },
       body: params.toString()
     });
     if (!res.ok) {
-      console.error("ACCEPT_GRANT_FAIL:", res.status, await res.text());
-      return success;
+      const body = await res.text();
+      console.error("ACCEPT_GRANT_FAIL:", { reason: "token_exchange", status: res.status, body });
+      return acceptGrantError(messageId, `Token exchange failed: ${res.status}`);
     }
     const tokens = await res.json();
+    console.info("ACCEPT_GRANT_TOKENS:", {
+      hasAccessToken: !!tokens.access_token,
+      hasRefreshToken: !!tokens.refresh_token,
+      expiresIn: tokens.expires_in
+    });
     await repo.update(
       userMetadataKey(userId),
       "SET alexaAccessToken = :at, alexaRefreshToken = :rt, alexaTokenExpiresAt = :exp",
@@ -79,9 +117,20 @@ async function handleAcceptGrant(userId, directive, repo) {
     );
     console.info("ACCEPT_GRANT_OK:", { userId });
   } catch (err) {
-    console.error("ACCEPT_GRANT_ERROR:", err?.message);
+    console.error("ACCEPT_GRANT_ERROR:", { reason: "exception", message: err?.message, stack: err?.stack });
+    return acceptGrantError(messageId, "Internal error");
   }
-  return success;
+  return {
+    event: {
+      header: {
+        namespace: "Alexa.Authorization",
+        name: "AcceptGrant.Response",
+        payloadVersion: "3",
+        messageId: messageId + "-rsp"
+      },
+      payload: {}
+    }
+  };
 }
 
 export function createSmartHomeHandler({ dbFactory } = {}) {

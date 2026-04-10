@@ -18,7 +18,7 @@ export function loadRuntimeConfig(env = process.env) {
     adminSecret: optionalEnv("ADMIN_SECRET", "", env),
     alexaClientId: optionalEnv("ALEXA_CLIENT_ID", "", env),
     alexaClientSecret: optionalEnv("ALEXA_CLIENT_SECRET", "", env),
+    alexaRedirectUri: optionalEnv("ALEXA_REDIRECT_URI", "", env),
     testAlexaToken: optionalEnv("TEST_ALEXA_TOKEN", "", env)
   };
 }
-

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { createAdminHandler } from "../../services/admin/index.js";
 import { createRelayHandler } from "../../services/relay/index.js";
 import { createSmartHomeHandler } from "../../services/smarthome/index.js";
+import { userMetadataKey } from "../../shared/dynamo/keys.mjs";
 import { createInMemoryDbFactory } from "../support/inMemoryDb.mjs";
 
 function parseWs(res) {
@@ -12,6 +13,7 @@ function parseWs(res) {
 test("admin + relay single-table flow", async () => {
   process.env.DATA_TABLE = "SldBltData-v1-prod";
   process.env.ADMIN_SECRET = "integration-admin-secret";
+  process.env.TEST_ALEXA_TOKEN = "integration-alexa-token";
 
   const dbFactory = createInMemoryDbFactory();
   const adminHandler = createAdminHandler({ dbFactory });
@@ -33,6 +35,12 @@ test("admin + relay single-table flow", async () => {
 
   const clientId = createRes.body.clientId;
   const clientSecret = createRes.body.secret;
+  await dbFactory(process.env.DATA_TABLE).put({
+    ...userMetadataKey("test-user-id"),
+    entityType: "user",
+    userId: "test-user-id",
+    clientId
+  });
 
   const listRes = parseWs(await adminHandler({
     body: JSON.stringify({
@@ -83,7 +91,17 @@ test("admin + relay single-table flow", async () => {
       action: "state_update",
       clientId,
       deviceId: "lamp-1",
-      state: { powerState: "ON" }
+      state: {
+        properties: [
+          {
+            namespace: "Alexa.PowerController",
+            name: "powerState",
+            value: "ON",
+            timeOfSample: "2026-04-09T00:00:00.000Z",
+            uncertaintyInMilliseconds: 0
+          }
+        ]
+      }
     }),
     requestContext: { routeKey: "state_update", connectionId: "conn-1" }
   }));
@@ -97,9 +115,9 @@ test("admin + relay single-table flow", async () => {
     requestContext: { routeKey: "list_devices", connectionId: "conn-1" }
   }));
   assert.equal(listDevicesRes.statusCode, 200);
-  assert.equal(listDevicesRes.body.items.length, 1);
-  assert.equal(listDevicesRes.body.items[0].deviceId, "lamp-1");
-  assert.deepEqual(listDevicesRes.body.items[0].state, { powerState: "ON" });
+  assert.equal(listDevicesRes.body.devices.length, 1);
+  assert.equal(listDevicesRes.body.devices[0].endpointId, "lamp-1");
+  assert.equal(listDevicesRes.body.devices[0].state.properties[0].value, "ON");
 
   const discoveryRes = await smarthomeHandler({
     directive: {
@@ -109,7 +127,7 @@ test("admin + relay single-table flow", async () => {
         payloadVersion: "3",
         messageId: "disc-1"
       },
-      payload: { scope: { clientId } }
+      payload: { scope: { token: process.env.TEST_ALEXA_TOKEN } }
     }
   });
   assert.equal(discoveryRes.event.header.name, "Discover.Response");
@@ -127,6 +145,7 @@ test("admin + relay single-table flow", async () => {
       },
       endpoint: {
         endpointId: "lamp-1",
+        scope: { token: process.env.TEST_ALEXA_TOKEN },
         cookie: { clientId }
       }
     }
@@ -152,5 +171,5 @@ test("admin + relay single-table flow", async () => {
     requestContext: { routeKey: "list_devices", connectionId: "conn-1" }
   }));
   assert.equal(listAfterDelete.statusCode, 200);
-  assert.equal(listAfterDelete.body.items.length, 0);
+  assert.equal(listAfterDelete.body.devices.length, 0);
 });
