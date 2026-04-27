@@ -5,7 +5,7 @@ import { handleReporterEvent } from "./service.mjs";
 import { unmarshall } from "@aws-sdk/util-dynamodb";
 import { userMetadataKey } from "../../shared/dynamo/keys.mjs";
 
-async function sendToAlexaEventGateway(payload) {
+async function sendToAlexaEventGateway(payload, _normalized, diagnostics = {}) {
   const token = payload?.event?.payload?.scope?.token || payload?.event?.endpoint?.scope?.token;
   const res = await fetch("https://api.amazonalexa.com/v3/events", {
     method: "POST",
@@ -17,9 +17,23 @@ async function sendToAlexaEventGateway(payload) {
   });
   if (!res.ok) {
     const body = await res.text();
-    console.error("REPORTER_SEND_FAIL:", { status: res.status, body });
+    console.error("REPORTER_SEND_FAIL:", {
+      status: res.status,
+      body,
+      messageId: payload?.event?.header?.messageId,
+      userId: diagnostics.userId,
+      deviceId: diagnostics.deviceId,
+      propertySummary: diagnostics.propertySummary
+    });
   } else {
-    console.info("REPORTER_SEND_OK:", { status: res.status });
+    console.info("REPORTER_SEND_OK:", {
+      status: res.status,
+      messageId: payload?.event?.header?.messageId,
+      userId: diagnostics.userId,
+      deviceId: diagnostics.deviceId,
+      tokenSource: diagnostics.tokenSource,
+      alexaRequestId: res.headers.get("x-amzn-requestid") || null
+    });
   }
 }
 
@@ -46,7 +60,13 @@ export function createReporterHandler({
         const expiresAt = meta.alexaTokenExpiresAt ? new Date(meta.alexaTokenExpiresAt) : null;
         const expired = !expiresAt || expiresAt.getTime() - Date.now() < 60_000;
 
-        if (!expired && meta.alexaAccessToken) return meta.alexaAccessToken;
+        if (!expired && meta.alexaAccessToken) {
+          return {
+            accessToken: meta.alexaAccessToken,
+            tokenSource: "cached",
+            expiresAt: meta.alexaTokenExpiresAt || null
+          };
+        }
 
         // Token missing or expiring within 60s — refresh it
         const refreshToken = meta.alexaRefreshToken;
@@ -82,7 +102,11 @@ export function createReporterHandler({
           }
         );
         console.info("REPORTER_TOKEN_REFRESHED:", { userId });
-        return tokens.access_token;
+        return {
+          accessToken: tokens.access_token,
+          tokenSource: "refreshed",
+          expiresAt: new Date(Date.now() + tokens.expires_in * 1000).toISOString()
+        };
       });
 
       // DynamoDB stream records arrive with type descriptors in record.dynamodb.OldImage/NewImage.

@@ -6,7 +6,8 @@ test("reporter builds and sends change report when device state changes", async 
   const sent = [];
   const res = await handleReporterEvent({
     repo: {
-      get: async () => ({ Item: { pk: "CLIENT#c1", sk: "METADATA", ownerUserId: "u1" } })
+      get: async () => ({ Item: { pk: "CLIENT#c1", sk: "METADATA", ownerUserId: "u1" } }),
+      scan: async () => ({ Items: [] })
     },
     tokenResolver: async (userId) => (userId === "u1" ? "token-1" : null),
     event: {
@@ -39,7 +40,8 @@ test("reporter emits delete report on soft delete or remove", async () => {
   const names = [];
   const res = await handleReporterEvent({
     repo: {
-      get: async () => ({ Item: { pk: "CLIENT#c1", sk: "METADATA", ownerUserId: "u1" } })
+      get: async () => ({ Item: { pk: "CLIENT#c1", sk: "METADATA", ownerUserId: "u1" } }),
+      scan: async () => ({ Items: [] })
     },
     tokenResolver: async () => "token-1",
     event: {
@@ -84,7 +86,8 @@ test("reporter emits AddOrUpdateReport when endpoint capabilities change", async
   };
   const res = await handleReporterEvent({
     repo: {
-      get: async () => ({ Item: { pk: "CLIENT#c1", sk: "METADATA", ownerUserId: "u1" } })
+      get: async () => ({ Item: { pk: "CLIENT#c1", sk: "METADATA", ownerUserId: "u1" } }),
+      scan: async () => ({ Items: [] })
     },
     tokenResolver: async () => "token-1",
     event: {
@@ -133,7 +136,8 @@ test("reporter emits ChangeReport (not AddOrUpdateReport) when only state change
   };
   const res = await handleReporterEvent({
     repo: {
-      get: async () => ({ Item: { pk: "CLIENT#c1", sk: "METADATA", ownerUserId: "u1" } })
+      get: async () => ({ Item: { pk: "CLIENT#c1", sk: "METADATA", ownerUserId: "u1" } }),
+      scan: async () => ({ Items: [] })
     },
     tokenResolver: async () => "token-1",
     event: {
@@ -160,4 +164,37 @@ test("reporter emits ChangeReport (not AddOrUpdateReport) when only state change
   assert.equal(res.sent, 1);
   // Same endpoint, different state — should be ChangeReport, not AddOrUpdateReport
   assert.equal(sent[0].event.header.name, "ChangeReport");
+});
+
+test("reporter fans out change reports to all users mapped to the client", async () => {
+  const sent = [];
+  const res = await handleReporterEvent({
+    repo: {
+      get: async () => ({ Item: { pk: "CLIENT#c1", sk: "METADATA", ownerUserId: "u1" } }),
+      scan: async () => ({
+        Items: [
+          { pk: "USER#u1", sk: "METADATA", clientId: "c1" },
+          { pk: "USER#u2", sk: "METADATA", clientId: "c1" },
+          { pk: "USER#u3", sk: "METADATA", clientId: "other" }
+        ]
+      })
+    },
+    tokenResolver: async (userId) => `token-${userId}`,
+    event: {
+      Records: [
+        {
+          eventName: "MODIFY",
+          oldImage: { pk: "CLIENT#c1", sk: "DEVICE#doorbell", state: { powerState: "OFF" }, status: "active" },
+          newImage: { pk: "CLIENT#c1", sk: "DEVICE#doorbell", state: { powerState: "ON" }, status: "active" }
+        }
+      ]
+    },
+    reportSender: async (payload) => {
+      sent.push(payload.event.endpoint.scope.token);
+    }
+  });
+
+  assert.equal(res.changed, 1);
+  assert.equal(res.sent, 2);
+  assert.deepEqual(sent.sort(), ["token-u1", "token-u2"]);
 });

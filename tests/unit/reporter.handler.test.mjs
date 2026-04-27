@@ -20,6 +20,11 @@ test("reporter handler unmarshals DynamoDB stream format", async () => {
     sk: "METADATA",
     ownerUserId: "u1"
   });
+  await dbFactory("SldBltData-v1-prod").put({
+    pk: "USER#u1",
+    sk: "METADATA",
+    clientId: "c1"
+  });
   const handler = createReporterHandler({
     dbFactory,
     tokenResolver: async () => "token-1",
@@ -55,6 +60,11 @@ test("reporter handler delegates to service", async () => {
     sk: "METADATA",
     ownerUserId: "u1"
   });
+  await dbFactory("SldBltData-v1-prod").put({
+    pk: "USER#u1",
+    sk: "METADATA",
+    clientId: "c1"
+  });
   const handler = createReporterHandler({
     dbFactory,
     tokenResolver: async () => "token-1",
@@ -73,4 +83,43 @@ test("reporter handler delegates to service", async () => {
   assert.equal(res.changed, 1);
   assert.equal(res.sent, 1);
   assert.equal(calls, 1);
+});
+
+test("reporter handler fans out to multiple mapped users", async () => {
+  process.env.DATA_TABLE = "SldBltData-v1-prod";
+  const tokens = [];
+  const dbFactory = createInMemoryDbFactory();
+  await dbFactory("SldBltData-v1-prod").put({
+    pk: "CLIENT#c1",
+    sk: "METADATA",
+    ownerUserId: "u1"
+  });
+  await dbFactory("SldBltData-v1-prod").put({
+    pk: "USER#u1",
+    sk: "METADATA",
+    clientId: "c1"
+  });
+  await dbFactory("SldBltData-v1-prod").put({
+    pk: "USER#u2",
+    sk: "METADATA",
+    clientId: "c1"
+  });
+  const handler = createReporterHandler({
+    dbFactory,
+    tokenResolver: async (userId) => `token-${userId}`,
+    reportSender: async (payload) => {
+      tokens.push(payload.event.endpoint.scope.token);
+    }
+  });
+  const res = await handler({
+    Records: [{
+      eventName: "MODIFY",
+      oldImage: { pk: "CLIENT#c1", sk: "DEVICE#lamp-1", state: { powerState: "OFF" }, status: "active" },
+      newImage: { pk: "CLIENT#c1", sk: "DEVICE#lamp-1", state: { powerState: "ON" }, status: "active" }
+    }]
+  });
+  assert.equal(res.ok, true);
+  assert.equal(res.changed, 1);
+  assert.equal(res.sent, 2);
+  assert.deepEqual(tokens.sort(), ["token-u1", "token-u2"]);
 });

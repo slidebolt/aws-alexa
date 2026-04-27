@@ -16,39 +16,51 @@ export async function handleReporterEvent({
     console.info("REPORTER_RECORD:", { kind: normalized.kind, clientId: normalized.clientId, deviceId: normalized.deviceId });
 
     if (!repo || typeof repo.get !== "function") continue;
-    const metaRes = await repo.get({ pk: `CLIENT#${normalized.clientId}`, sk: "METADATA" });
-    const meta = metaRes?.Item;
-    const userId = meta?.ownerUserId;
-    if (!userId) {
-      console.warn("REPORTER_SKIP:", { reason: "no_owner", clientId: normalized.clientId, deviceId: normalized.deviceId });
+    const userIds = await resolveClientUserIds(repo, normalized.clientId);
+    if (userIds.length === 0) {
+      console.warn("REPORTER_SKIP:", { reason: "no_users", clientId: normalized.clientId, deviceId: normalized.deviceId });
       continue;
     }
+    for (const userId of userIds) {
+      const tokenResult = normalizeTokenResult(await tokenResolver(userId));
+      if (!tokenResult.accessToken) {
+        console.warn("REPORTER_SKIP:", { reason: "no_token", clientId: normalized.clientId, deviceId: normalized.deviceId, userId });
+        continue;
+      }
 
-    const accessToken = await tokenResolver(userId);
-    if (!accessToken) {
-      console.warn("REPORTER_SKIP:", { reason: "no_token", clientId: normalized.clientId, deviceId: normalized.deviceId });
-      continue;
+      const properties = normalized.kind === "change"
+        ? propsFromRecord(normalized.newImage)
+        : [];
+      let payload;
+      if (normalized.kind === "delete") {
+        payload = buildDeleteReport({ endpointId: normalized.deviceId, accessToken: tokenResult.accessToken });
+      } else if (normalized.kind === "discovery") {
+        payload = buildAddOrUpdateReport({
+          endpoint: normalized.newImage?.endpoint,
+          accessToken: tokenResult.accessToken
+        });
+      } else {
+        payload = buildChangeReport({
+          endpointId: normalized.deviceId,
+          accessToken: tokenResult.accessToken,
+          properties
+        });
+      }
+
+      const diagnostics = {
+        kind: normalized.kind,
+        clientId: normalized.clientId,
+        deviceId: normalized.deviceId,
+        userId,
+        messageId: payload?.event?.header?.messageId,
+        tokenSource: tokenResult.tokenSource,
+        tokenExpiresAt: tokenResult.expiresAt,
+        propertySummary: summarizeProperties(properties)
+      };
+      console.info("REPORTER_SEND:", diagnostics);
+      await reportSender(payload, normalized, diagnostics);
+      sent += 1;
     }
-
-    let payload;
-    if (normalized.kind === "delete") {
-      payload = buildDeleteReport({ endpointId: normalized.deviceId, accessToken });
-    } else if (normalized.kind === "discovery") {
-      payload = buildAddOrUpdateReport({
-        endpoint: normalized.newImage?.endpoint,
-        accessToken
-      });
-    } else {
-      payload = buildChangeReport({
-        endpointId: normalized.deviceId,
-        accessToken,
-        properties: propsFromRecord(normalized.newImage)
-      });
-    }
-
-    console.info("REPORTER_SEND:", { kind: normalized.kind, deviceId: normalized.deviceId });
-    await reportSender(payload, normalized);
-    sent += 1;
   }
 
   return {
@@ -57,6 +69,50 @@ export async function handleReporterEvent({
     changed,
     sent
   };
+}
+
+async function resolveClientUserIds(repo, clientId) {
+  const ids = new Set();
+
+  const metaRes = await repo.get({ pk: `CLIENT#${clientId}`, sk: "METADATA" });
+  const meta = metaRes?.Item;
+  if (meta?.ownerUserId) {
+    ids.add(meta.ownerUserId);
+  }
+
+  if (typeof repo.scan === "function") {
+    const res = await repo.scan();
+    for (const item of res?.Items ?? []) {
+      if (item?.pk?.startsWith("USER#") && item.sk === "METADATA" && item.clientId === clientId) {
+        ids.add(item.pk.slice("USER#".length));
+      }
+    }
+  }
+
+  return [...ids];
+}
+
+function normalizeTokenResult(result) {
+  if (typeof result === "string") {
+    return { accessToken: result, tokenSource: "unknown", expiresAt: null };
+  }
+  if (result && typeof result === "object") {
+    return {
+      accessToken: result.accessToken || null,
+      tokenSource: result.tokenSource || "unknown",
+      expiresAt: result.expiresAt || null
+    };
+  }
+  return { accessToken: null, tokenSource: "missing", expiresAt: null };
+}
+
+function summarizeProperties(properties) {
+  return (properties || []).map((prop) => ({
+    namespace: prop?.namespace || null,
+    name: prop?.name || null,
+    value: prop?.value ?? null,
+    timeOfSample: prop?.timeOfSample || null
+  }));
 }
 
 function normalizeRecord(record) {
