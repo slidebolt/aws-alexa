@@ -7,6 +7,8 @@ import { tmpdir } from "node:os";
 
 const runE2E = process.env.RUN_AWS_E2E === "1";
 const region = process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "us-east-1";
+const smokeClientId = process.env.AWS_SMOKE_CLIENT_ID || "";
+const smokeEndpointId = process.env.AWS_SMOKE_ENDPOINT_ID || "";
 
 function invokeLambda(functionName, payload) {
   const dir = mkdtempSync(join(tmpdir(), "sldblt-e2e-"));
@@ -49,7 +51,7 @@ test("AWS lambda invoke smoke: SldBltAdmin returns structured error for invalid 
   assert.match(res.body, /Invalid JSON body/);
 });
 
-test("AWS lambda invoke smoke: SldBltSmartHome discovery returns Alexa response", { skip: !runE2E }, async () => {
+test("AWS lambda invoke smoke: SldBltSmartHome discovery rejects missing bearer token", { skip: !runE2E }, async () => {
   const res = invokeLambda("SldBltSmartHome", {
     directive: {
       header: {
@@ -61,9 +63,36 @@ test("AWS lambda invoke smoke: SldBltSmartHome discovery returns Alexa response"
       payload: { scope: { clientId: "nonexistent-client" } }
     }
   });
-  assert.equal(res.event.header.namespace, "Alexa.Discovery");
-  assert.equal(res.event.header.name, "Discover.Response");
-  assert.ok(Array.isArray(res.event.payload.endpoints));
+  assert.equal(res.event.header.namespace, "Alexa");
+  assert.equal(res.event.header.name, "ErrorResponse");
+  assert.equal(res.event.payload.type, "INVALID_AUTHORIZATION_CREDENTIAL");
+});
+
+test("AWS lambda invoke smoke: SldBltSmartHome report state returns live state", {
+  skip: !runE2E || !smokeClientId || !smokeEndpointId
+}, async () => {
+  const res = invokeLambda("SldBltSmartHome", {
+    directive: {
+      header: {
+        namespace: "Alexa",
+        name: "ReportState",
+        payloadVersion: "3",
+        messageId: "smoke-reportstate-1",
+        correlationToken: "smoke-correlation"
+      },
+      endpoint: {
+        endpointId: smokeEndpointId,
+        scope: { type: "BearerToken", token: "smoke-token" },
+        cookie: { clientId: smokeClientId }
+      },
+      payload: {}
+    }
+  });
+  assert.equal(res.event.header.namespace, "Alexa");
+  assert.equal(res.event.header.name, "StateReport");
+  assert.equal(res.event.endpoint.endpointId, smokeEndpointId);
+  assert.ok(Array.isArray(res.context.properties));
+  assert.ok(res.context.properties.length > 0);
 });
 
 test("AWS lambda invoke smoke: SldBltReporter handles empty stream event", { skip: !runE2E }, async () => {
@@ -71,4 +100,3 @@ test("AWS lambda invoke smoke: SldBltReporter handles empty stream event", { ski
   assert.equal(res.ok, true);
   assert.equal(res.processed, 0);
 });
-

@@ -21,6 +21,7 @@
     "synth:real": "node scripts/synth.mjs --real",
     "deploy": "node scripts/deploy.mjs",
     "deploy:check": "node scripts/postdeploy-check.mjs",
+    "logs:tail": "scripts/tail-logs.sh",
     "verify": "node scripts/repo-guard.mjs && node scripts/build.mjs && node scripts/test.mjs unit && node scripts/synth.mjs",
     "verify:full": "node scripts/repo-guard.mjs && node scripts/build.mjs && node scripts/test.mjs unit && node scripts/test.mjs integration && node scripts/synth.mjs"
   }
